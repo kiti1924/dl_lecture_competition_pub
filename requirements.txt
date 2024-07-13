@@ -7,3 +7,4 @@ mne==1.6.0
 hydra-core==1.3.2
 wandb==0.15.0
 termcolor
+numpy<2

@@ -5,7 +5,7 @@ lr: 0.001
 device: cuda:0
 num_workers: 4
 seed: 1234
-use_wandb: False
+use_wandb: True
 
 data_dir: C:\Users\kikus\OneDrive\DL\Final\dl_lecture_competition_pub\data
 
