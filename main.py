@@ -10,6 +10,8 @@ import torch
 import torch.nn as nn
 import torchvision
 from torchvision import transforms
+import os
+import datetime
 
 # Load model directly
 from transformers import AutoProcessor, ViltForVisualQuestionAnswering
@@ -458,8 +460,12 @@ def main():
 
     submission = [train_dataset.idx2answer[id] for id in submission]
     submission = np.array(submission)
-    torch.save(model.state_dict(), "model.pth")
-    np.save("submission.npy", submission)
+    now = datetime.datetime.now()
+    current_time = now.strftime("%m-%d-%H-%M")
+    dir_for_output = "./output/" + current_time
+    os.makedirs(dir_for_output, exist_ok=True)
+    torch.save(model.state_dict(), dir_for_output+"/"+"model.pth")
+    np.save(dir_for_output +"/"+"submission.npy", submission)
 
 if __name__ == "__main__":
     main()
