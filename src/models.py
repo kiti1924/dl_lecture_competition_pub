@@ -52,7 +52,7 @@ class ConvBlock(nn.Module):
 
         self.conv0 = nn.Conv1d(in_dim, out_dim, kernel_size, padding="same")
         self.conv1 = nn.Conv1d(out_dim, out_dim, kernel_size, padding="same")
-        self.conv2 = nn.Conv1d(out_dim, out_dim, kernel_size) # , padding="same") #add
+        # self.conv2 = nn.Conv1d(out_dim, out_dim, kernel_size, padding="same") #add
         
         self.batchnorm0 = nn.BatchNorm1d(num_features=out_dim)
         self.batchnorm1 = nn.BatchNorm1d(num_features=out_dim)
@@ -70,8 +70,8 @@ class ConvBlock(nn.Module):
         X = self.conv1(X) + X  # skip connection
         X = F.gelu(self.batchnorm1(X))
 
-        X = self.conv2(X) #add
-        X = F.glu(X, dim=-2) #add
+        # X = self.conv2(X) #add
+        # X = F.glu(X, dim=-2) #add
 
         # 元のモデルがやっていること
         # self.blocks = nn.Sequential(
