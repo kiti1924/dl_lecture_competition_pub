@@ -435,7 +435,9 @@ def main():
     # deviceの設定
     set_seed(42)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-
+    #zcaのための読み込み
+    
+    train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform.ToTensor())
     #zcaの定義
     zca = ZCAWhitening()
     zca.fit(train_dataset)
