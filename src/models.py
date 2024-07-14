@@ -52,7 +52,7 @@ class ConvBlock(nn.Module):
 
         self.conv0 = nn.Conv1d(in_dim, out_dim, kernel_size, padding="same")
         self.conv1 = nn.Conv1d(out_dim, out_dim, kernel_size, padding="same")
-        # self.conv2 = nn.Conv1d(out_dim, out_dim, kernel_size) # , padding="same")
+        self.conv2 = nn.Conv1d(out_dim, out_dim, kernel_size) # , padding="same") #add
         
         self.batchnorm0 = nn.BatchNorm1d(num_features=out_dim)
         self.batchnorm1 = nn.BatchNorm1d(num_features=out_dim)
@@ -70,7 +70,25 @@ class ConvBlock(nn.Module):
         X = self.conv1(X) + X  # skip connection
         X = F.gelu(self.batchnorm1(X))
 
-        # X = self.conv2(X)
-        # X = F.glu(X, dim=-2)
+        X = self.conv2(X) #add
+        X = F.glu(X, dim=-2) #add
+
+        # 元のモデルがやっていること
+        # self.blocks = nn.Sequential(
+        #     self.conv0(X),              # 32x32x3 -> 30x30x32
+        #     self.batchnorm0(X),
+        #     F.gelu(),
+        #     self.conv1(X),              # 32x32x3 -> 30x30x32
+        #     self.batchnorm1(X),
+        #     F.gelu(),
+        #     self.conv0(X),              # 32x32x3 -> 30x30x32
+        #     self.batchnorm0(X),
+        #     F.gelu(),
+        #     self.conv1(X),              # 32x32x3 -> 30x30x32
+        #     self.batchnorm1(X),
+        #     F.gelu(),
+        # nn.AdaptiveAvgPool1d(1),
+        # Rearrange("b d 1 -> b d"),
+        # nn.Linear(hid_dim, num_classes),
 
         return self.dropout(X)
