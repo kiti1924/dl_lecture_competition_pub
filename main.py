@@ -13,11 +13,11 @@ from torchvision import transforms
 import os
 import datetime
 
-# Load model directly
-from transformers import AutoProcessor, ViltForVisualQuestionAnswering
+# # Load model directly
+# from transformers import AutoProcessor, ViltForQuestionAnswering
 
-processor = AutoProcessor.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
-model = ViltForVisualQuestionAnswering.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
+# processor = AutoProcessor.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
+# model = ViltForQuestionAnswering.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
 
 def set_seed(seed):
     random.seed(seed)
@@ -315,58 +315,6 @@ class VQAModel(nn.Module):
 
         return x
 
-# Viltのファインチューニング
-def pre_train_vilt(dataloader,net,criterion):
-    # deviceの設定
-    set_seed(42)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    #criterion = torch.nn.MSELoss()
-    net.train()
-    num_epochs = 10
-    lr = 0.001
-    #criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(net.parameters(), lr=lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=lr*0.001)
-    #scheduler = CosineAnnealingLR(optimizer,max_epochs=num_epochs,warmup_epochs=5,warmup_start_lr=0.00001,eta_min=0.001*0.001)
-    # トレーニングループ
-    for epoch in range(num_epochs):
-        start = time.time()
-        running_loss = 0.0
-        total_acc = 0
-
-        for inputs, answers, mode_answer in dataloader:
-            optimizer.zero_grad()
-            inputs = inputs.to(device)
-            mode_answer = mode_answer.to(device)
-            #inputs["labels"] = mode_answer
-            #print(inputs)
-            outputs = net(**inputs).logits.to(device)
-            #outputs = model_vilt.vqa_classifier(outputs).to(device)
-            #print(outputs.shape)
-            if outputs.shape[0] != 1:
-                loss = criterion(outputs, mode_answer.squeeze())
-            else:
-                loss = criterion(outputs, mode_answer)
-            loss.backward()
-            optimizer.step()
-
-            running_loss += loss.item()
-            total_acc += VQA_criterion(outputs.argmax(1), answers)  # VQA accuracy
-        epoch_loss = running_loss / len(dataloader)
-        total_acc = total_acc / len(dataloader)
-        if epoch % 1 == 0 or epoch == 0:
-            print(f'Epoch {epoch+1}/{num_epochs} Loss: {epoch_loss:.4f} train acc: {total_acc:.4f} Time: {(time.time()-start):.2f} [s]')
-        scheduler.step()
-
-processor = ViltProcessor.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
-model_vilt = ViltForQuestionAnswering.from_pretrained("dandelin/vilt-b32-finetuned-vqa").to(device)
-model_vilt.config.num_labels = 3001
-model_vilt.classifier = nn.Sequential(
-    nn.Linear(in_features=768, out_features=1536, bias=True),
-    nn.LayerNorm((1536,), eps=1e-05, elementwise_affine=True),
-    nn.GELU(approximate='none'),
-    nn.Linear(in_features=1536, out_features=3001, bias=True)
-    ).to(device)
 # 4. 学習の実装
 def train(model, dataloader, optimizer, criterion, device):
     model.train()
