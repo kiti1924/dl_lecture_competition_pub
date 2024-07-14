@@ -12,10 +12,7 @@ import torchvision
 from torchvision import transforms
 
 # Load model directly
-from transformers import AutoProcessor, ViltForVisualQuestionAnswering
-
-processor = AutoProcessor.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
-model = ViltForVisualQuestionAnswering.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
+from transformers import ViltProcessor, ViltForQuestionAnswering
 
 def set_seed(seed):
     random.seed(seed)
@@ -25,7 +22,6 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
 
 def process_text(text):
     # lowercase
@@ -64,7 +60,6 @@ def process_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
 
     return text
-
 
 # 1. データローダーの作成
 class VQADataset(torch.utils.data.Dataset):
@@ -144,18 +139,22 @@ class VQADataset(torch.utils.data.Dataset):
                 question[-1] = 1  # 未知語
 
         if self.answer:
-            answers = [self.answer2idx[process_text(answer["answer"])] for answer in self.df["answers"][idx]]
-            mode_answer_idx = mode(answers)  # 最頻値を取得（正解ラベル）
-
-            return image, torch.Tensor(question), torch.Tensor(answers), int(mode_answer_idx)
+            answers = [process_text(answer["answer"]) for answer in self.df["answers"][idx]]
+            mode_answer_idx = self.answer2idx[self.choose_ans_label(answers)]
+            answers_ = self.choose_ans(answers)
+            answers_ = [self.answer2idx[word] for word in answers_]
+            target = torch.zeros(3001)
+            for i in answers_:
+                target[i] += 1
+            target = (target / len(answers_)).to(device)
+            return image, question, torch.Tensor(target),torch.tensor(answers_) ,int(mode_answer_idx)
 
         else:
-            return image, torch.Tensor(question)
+            return image, question
 
     def __len__(self):
         return len(self.df)
-
-
+    
 # 2. 評価指標の実装
 # 簡単にするならBCEを利用する
 def VQA_criterion(batch_pred: torch.Tensor, batch_answers: torch.Tensor):
@@ -175,154 +174,17 @@ def VQA_criterion(batch_pred: torch.Tensor, batch_answers: torch.Tensor):
 
     return total_acc / len(batch_pred)
 
-
-# 3. モデルのの実装
-# ResNetを利用できるようにしておく
-class BasicBlock(nn.Module):
-    expansion = 1
-
-    def __init__(self, in_channels: int, out_channels: int, stride: int = 1):
-        super().__init__()
-
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1)
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
-
-        self.shortcut = nn.Sequential()
-        if stride != 1 or in_channels != out_channels:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride),
-                nn.BatchNorm2d(out_channels)
-            )
-
-    def forward(self, x):
-        residual = x
-        out = self.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-
-        out += self.shortcut(residual)
-        out = self.relu(out)
-
-        return out
-
-
-class BottleneckBlock(nn.Module):
-    expansion = 4
-
-    def __init__(self, in_channels: int, out_channels: int, stride: int = 1):
-        super().__init__()
-
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1)
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=stride, padding=1)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        self.conv3 = nn.Conv2d(out_channels, out_channels * self.expansion, kernel_size=1, stride=1)
-        self.bn3 = nn.BatchNorm2d(out_channels * self.expansion)
-        self.relu = nn.ReLU(inplace=True)
-
-        self.shortcut = nn.Sequential()
-        if stride != 1 or in_channels != out_channels * self.expansion:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels * self.expansion, kernel_size=1, stride=stride),
-                nn.BatchNorm2d(out_channels * self.expansion)
-            )
-
-    def forward(self, x):
-        residual = x
-        out = self.relu(self.bn1(self.conv1(x)))
-        out = self.relu(self.bn2(self.conv2(out)))
-        out = self.bn3(self.conv3(out))
-
-        out += self.shortcut(residual)
-        out = self.relu(out)
-
-        return out
-
-
-class ResNet(nn.Module):
-    def __init__(self, block, layers):
-        super().__init__()
-        self.in_channels = 64
-
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-
-        self.layer1 = self._make_layer(block, layers[0], 64)
-        self.layer2 = self._make_layer(block, layers[1], 128, stride=2)
-        self.layer3 = self._make_layer(block, layers[2], 256, stride=2)
-        self.layer4 = self._make_layer(block, layers[3], 512, stride=2)
-
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * block.expansion, 512)
-
-    def _make_layer(self, block, blocks, out_channels, stride=1):
-        layers = []
-        layers.append(block(self.in_channels, out_channels, stride))
-        self.in_channels = out_channels * block.expansion
-        for _ in range(1, blocks):
-            layers.append(block(self.in_channels, out_channels))
-
-        return nn.Sequential(*layers)
-
-    def forward(self, x):
-        x = self.relu(self.bn1(self.conv1(x)))
-        x = self.maxpool(x)
-
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-
-        x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-
-        return x
-
-
-def ResNet18():
-    return ResNet(BasicBlock, [2, 2, 2, 2])
-
-
-def ResNet50():
-    return ResNet(BottleneckBlock, [3, 4, 6, 3])
-
-
-class VQAModel(nn.Module):
-    def __init__(self, vocab_size: int, n_answer: int):
-        super().__init__()
-        self.resnet = ResNet18()
-        self.text_encoder = nn.Linear(vocab_size, 512)
-
-        self.fc = nn.Sequential(
-            nn.Linear(1024, 512),
-            nn.ReLU(inplace=True),
-            nn.Linear(512, n_answer)
-        )
-
-    def forward(self, image, question):
-        image_feature = self.resnet(image)  # 画像の特徴量
-        question_feature = self.text_encoder(question)  # テキストの特徴量
-
-        x = torch.cat([image_feature, question_feature], dim=1)
-        x = self.fc(x)
-
-        return x
-
 # Viltのファインチューニング
+
+# loss定義
+# KLダイバージェンスに
+criterion = nn.KLDivLoss(reduction="batchmean")
+
+
 def pre_train_vilt(dataloader,net,criterion):
-    # deviceの設定
-    set_seed(42)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    #criterion = torch.nn.MSELoss()
     net.train()
     num_epochs = 10
     lr = 0.001
-    #criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(net.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=lr*0.001)
     #scheduler = CosineAnnealingLR(optimizer,max_epochs=num_epochs,warmup_epochs=5,warmup_start_lr=0.00001,eta_min=0.001*0.001)
@@ -332,30 +194,25 @@ def pre_train_vilt(dataloader,net,criterion):
         running_loss = 0.0
         total_acc = 0
 
-        for inputs, answers, mode_answer in dataloader:
+        for inputs, target,answers, mode_answer in dataloader:
             optimizer.zero_grad()
             inputs = inputs.to(device)
-            mode_answer = mode_answer.to(device)
-            #inputs["labels"] = mode_answer
-            #print(inputs)
             outputs = net(**inputs).logits.to(device)
-            #outputs = model_vilt.vqa_classifier(outputs).to(device)
-            #print(outputs.shape)
-            if outputs.shape[0] != 1:
-                loss = criterion(outputs, mode_answer.squeeze())
-            else:
-                loss = criterion(outputs, mode_answer)
+            outputs = F.log_softmax(outputs,dim=1)
+            loss = criterion(outputs, target)
             loss.backward()
             optimizer.step()
 
             running_loss += loss.item()
             total_acc += VQA_criterion(outputs.argmax(1), answers)  # VQA accuracy
-        epoch_loss = running_loss / len(dataloader)
+        epoch_loss = running_loss / len(dataloader.dataset)
         total_acc = total_acc / len(dataloader)
         if epoch % 1 == 0 or epoch == 0:
             print(f'Epoch {epoch+1}/{num_epochs} Loss: {epoch_loss:.4f} train acc: {total_acc:.4f} Time: {(time.time()-start):.2f} [s]')
         scheduler.step()
 
+# Vilt構築
+device = "cuda" if torch.cuda.is_available() else "cpu"
 processor = ViltProcessor.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
 model_vilt = ViltForQuestionAnswering.from_pretrained("dandelin/vilt-b32-finetuned-vqa").to(device)
 model_vilt.config.num_labels = 3001
@@ -365,54 +222,6 @@ model_vilt.classifier = nn.Sequential(
     nn.GELU(approximate='none'),
     nn.Linear(in_features=1536, out_features=3001, bias=True)
     ).to(device)
-# 4. 学習の実装
-def train(model, dataloader, optimizer, criterion, device):
-    model.train()
-
-    total_loss = 0
-    total_acc = 0
-    simple_acc = 0
-
-    start = time.time()
-    for image, question, answers, mode_answer in dataloader:
-        image, question, answer, mode_answer = \
-            image.to(device), question.to(device), answers.to(device), mode_answer.to(device)
-
-        pred = model(image, question)
-        loss = criterion(pred, mode_answer.squeeze())
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item()
-        total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
-        simple_acc += (pred.argmax(1) == mode_answer).float().mean().item()  # simple accuracy
-
-    return total_loss / len(dataloader), total_acc / len(dataloader), simple_acc / len(dataloader), time.time() - start
-
-
-def eval(model, dataloader, optimizer, criterion, device):
-    model.eval()
-
-    total_loss = 0
-    total_acc = 0
-    simple_acc = 0
-
-    start = time.time()
-    for image, question, answers, mode_answer in dataloader:
-        image, question, answer, mode_answer = \
-            image.to(device), question.to(device), answers.to(device), mode_answer.to(device)
-
-        pred = model(image, question)
-        loss = criterion(pred, mode_answer.squeeze())
-
-        total_loss += loss.item()
-        total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
-        simple_acc += (pred.argmax(1) == mode_answer).mean().item()  # simple accuracy
-
-    return total_loss / len(dataloader), total_acc / len(dataloader), simple_acc / len(dataloader), time.time() - start
-
 
 def main():
     # deviceの設定
@@ -435,7 +244,7 @@ def main():
 
     # optimizer / criterion
     num_epoch = 20
-    criterion = nn.KLDivLoss()
+    criterion = nn.KLDivLoss(reduction="batchmean")
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
 
     # train model
