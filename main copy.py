@@ -436,23 +436,27 @@ def main():
     set_seed(42)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     #zcaのための読み込み
-
-    train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform.ToTensor())
-    #zcaの定義
-    zca = ZCAWhitening()
-    zca.fit(train_dataset)
-
-    transform_train = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(), 
-        zca
-    ])
-
-    # dataloader / model
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor()
     ])
+    train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform)
+    
+    #zcaの定義
+    zca = ZCAWhitening()
+    zca.fit(train_dataset)
+
+    # dataloader / model
+    transform_train = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(), 
+        zca
+    ])    
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor()
+    ])
+
     train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform_train)
     test_dataset = VQADataset(df_path="./data/valid.json", image_dir="./data/valid", transform=transform, answer=False)
     test_dataset.update_dict(train_dataset)
