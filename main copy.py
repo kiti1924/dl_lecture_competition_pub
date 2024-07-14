@@ -77,7 +77,6 @@ class gcn():
         std = torch.std(x)
         return (x - mean)/(std + 10**(-6))  # 0除算を防ぐ
 
-GCN=gcn()
 
 # 標準化後の画像を[0, 1]に正規化する
 def deprocess(x):
@@ -96,43 +95,6 @@ def deprocess(x):
     _max = np.max(x)
     _x = (x - _min)/(_max - _min)
     return _x
-
-# ZCA白色化の実装
-class ZCAWhitening():
-    def __init__(self, epsilon=1e-4, device="cuda"):  # 計算が重いのでGPUを用いる
-        self.epsilon = epsilon
-        self.device = device
-
-    def fit(self, images):  # 変換行列と平均をデータから計算
-        """
-        Argument
-        --------
-        images : torchvision.datasets.cifar.CIFAR10
-            入力画像（訓練データ全体）．(N, C, H, W)
-        """
-        x = images[0][0].reshape(1, -1)  # 画像（1枚）を1次元化
-        self.mean = torch.zeros([1, x.size()[1]]).to(self.device)  # 平均値を格納するテンソル．xと同じ形状
-        con_matrix = torch.zeros([x.size()[1], x.size()[1]]).to(self.device)
-        for i in range(len(images)):  # 各データについての平均を取る
-            x = images[i][0].reshape(1, -1).to(self.device)
-            self.mean += x / len(images)
-            con_matrix += torch.mm(x.t(), x) / len(images)
-            if i % 10000 == 0:
-                print("{0}/{1}".format(i, len(images)))
-        con_matrix -= torch.mm(self.mean.t(), self.mean)
-        # E: 固有値 V: 固有ベクトルを並べたもの
-        E, V = torch.linalg.eigh(con_matrix)  # 固有値分解
-        self.ZCA_matrix = torch.mm(torch.mm(V, torch.diag((E.squeeze()+self.epsilon)**(-0.5))), V.t())  # A(\Lambda + \epsilon I)^{1/2}A^T
-        print("completed!")
-
-    def __call__(self, x):
-        size = x.size()
-        x = x.reshape(1, -1).to(self.device)
-        x -= self.mean  # x - \bar{x}
-        x = torch.mm(x, self.ZCA_matrix.t())
-        x = x.reshape(tuple(size))
-        x = x.to("cpu")
-        return x
 
 
 # 1. データローダーの作成
@@ -435,22 +397,15 @@ def main():
     # deviceの設定
     set_seed(42)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    #zcaのための読み込み
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor()
-    ])
-    train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform)
     
-    #zcaの定義
-    zca = ZCAWhitening()
-    zca.fit(train_dataset)
+    #gcnの定義
+    GCN=gcn()
 
     # dataloader / model
     transform_train = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(), 
-        zca
+        GCN
     ])    
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
