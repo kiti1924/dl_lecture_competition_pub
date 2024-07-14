@@ -64,7 +64,7 @@ def run(args: DictConfig):
         model.train()
         for X, y, subject_idxs in tqdm(train_loader, desc="Train"):
             X, y = X.to(args.device), y.to(args.device)
-
+            subject_idxs = subject_idxs.to(args.device)
             y_pred = model(X)
             
             loss = F.cross_entropy(y_pred, y)

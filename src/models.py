@@ -71,7 +71,7 @@ class ConvBlock(nn.Module):
         X = F.gelu(self.batchnorm1(X))
 
         # X = self.conv2(X) #add
-        # X = F.glu(X, dim=-2) #add
+        # X = F.glu(X, dim=1) #add
 
         # 元のモデルがやっていること
         # self.blocks = nn.Sequential(
