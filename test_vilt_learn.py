@@ -300,7 +300,7 @@ def pre_train_vilt(dataloader,model,criterion):
     model.train()
     num_epochs = 10
     lr = 0.001
-    optimizer = torch.optim.AdamW(net.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=lr*0.001)
     #scheduler = CosineAnnealingLR(optimizer,max_epochs=num_epochs,warmup_epochs=5,warmup_start_lr=0.00001,eta_min=0.001*0.001)
     # トレーニングループ
