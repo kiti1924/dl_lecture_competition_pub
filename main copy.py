@@ -13,10 +13,10 @@ from torchvision import transforms
 import os
 import datetime
 
-# Load model directly
-from transformers import ViltConfig
+# # Load model directly
+# from transformers import ViltConfig
 
-config = ViltConfig.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
+# config = ViltConfig.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
 
 def set_seed(seed):
     random.seed(seed)
@@ -436,7 +436,7 @@ def main():
     set_seed(42)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     #zcaのための読み込み
-    
+
     train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform.ToTensor())
     #zcaの定義
     zca = ZCAWhitening()
