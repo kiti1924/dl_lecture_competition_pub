@@ -13,11 +13,10 @@ from torchvision import transforms
 import os
 import datetime
 
-# Load model directly
-from transformers import AutoProcessor, ViltForQuestionAnswering
+# # Load model directly
+# from transformers import ViltConfig
 
-processor = AutoProcessor.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
-model = ViltForQuestionAnswering.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
+# config = ViltConfig.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
 
 def set_seed(seed):
     random.seed(seed)
@@ -28,6 +27,7 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def process_text(text):
     # lowercase
@@ -66,6 +66,36 @@ def process_text(text):
     text = re.sub(r'\s+', ' ', text).strip()
 
     return text
+
+# 画像の前処理を実装
+# GCN
+class gcn():
+    def __init__(self):
+        pass
+
+    def __call__(self, x):
+        mean = torch.mean(x)
+        std = torch.std(x)
+        return (x - mean)/(std + 10**(-6))  # 0除算を防ぐ
+
+
+# 標準化後の画像を[0, 1]に正規化する
+def deprocess(x):
+    """
+    Argument
+    --------
+    x : np.ndarray
+        入力画像．(H, W, C)
+
+    Return
+    ------
+    _x : np.ndarray
+        [0, 1]で正規化した画像．(H, W, C)
+    """
+    _min = np.min(x)
+    _max = np.max(x)
+    _x = (x - _min)/(_max - _min)
+    return _x
 
 
 # 1. データローダーの作成
@@ -146,13 +176,18 @@ class VQADataset(torch.utils.data.Dataset):
                 question[-1] = 1  # 未知語
 
         if self.answer:
-            answers = [self.answer2idx[process_text(answer["answer"])] for answer in self.df["answers"][idx]]
-            mode_answer_idx = mode(answers)  # 最頻値を取得（正解ラベル）
-
-            return image, torch.Tensor(question), torch.Tensor(answers), int(mode_answer_idx)
+            answers = [process_text(answer["answer"]) for answer in self.df["answers"][idx]]
+            mode_answer_idx = self.answer2idx[self.choose_ans_label(answers)]
+            answers_ = self.choose_ans(answers)
+            answers_ = [self.answer2idx[word] for word in answers_]
+            target = torch.zeros(3001)
+            for i in answers_:
+                target[i] += 1
+            target = (target / len(answers_)).to(device)
+            return image, question, torch.Tensor(target),torch.tensor(answers_) ,int(mode_answer_idx)
 
         else:
-            return image, torch.Tensor(question)
+            return image, question
 
     def __len__(self):
         return len(self.df)
@@ -325,7 +360,7 @@ def train(model, dataloader, optimizer, criterion, device):
 
     start = time.time()
     for image, question, answers, mode_answer in dataloader:
-        image, question, answer, mode_answer = \
+        image, question, answers, mode_answer = \
             image.to(device), question.to(device), answers.to(device), mode_answer.to(device)
 
         pred = model(image, question)
@@ -338,7 +373,6 @@ def train(model, dataloader, optimizer, criterion, device):
         total_loss += loss.item()
         total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
         simple_acc += (pred.argmax(1) == mode_answer).float().mean().item()  # simple accuracy
-
     return total_loss / len(dataloader), total_acc / len(dataloader), simple_acc / len(dataloader), time.time() - start
 
 
@@ -351,7 +385,7 @@ def eval(model, dataloader, optimizer, criterion, device):
 
     start = time.time()
     for image, question, answers, mode_answer in dataloader:
-        image, question, answer, mode_answer = \
+        image, question, answers, mode_answer = \
             image.to(device), question.to(device), answers.to(device), mode_answer.to(device)
 
         pred = model(image, question)
@@ -368,13 +402,25 @@ def main():
     # deviceの設定
     set_seed(42)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    #gcnの定義
+    GCN=gcn()
 
     # dataloader / model
+    transform_train = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(p=0.5),
+        # transforms.RandomCrop((224, 224)), 
+        transforms.RandomRotation(degrees=(-180, 180)),
+        transforms.ToTensor(), 
+        GCN
+    ])    
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor()
     ])
-    train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform)
+
+    train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform_train)
     test_dataset = VQADataset(df_path="./data/valid.json", image_dir="./data/valid", transform=transform, answer=False)
     test_dataset.update_dict(train_dataset)
 
@@ -386,11 +432,11 @@ def main():
     # optimizer / criterion
     num_epoch = 20
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
 
     # train model
     for epoch in range(num_epoch):
-        train_loss, train_acc, train_simple_acc, train_time = train(model, train_loader, optimizer, criterion, device)
+        train_loss, train_acc, train_simple_acc, train_time, num_epoch,  = train(model, train_loader, optimizer, criterion, device)
         print(f"【{epoch + 1}/{num_epoch}】\n"
               f"train time: {train_time:.2f} [s]\n"
               f"train loss: {train_loss:.4f}\n"

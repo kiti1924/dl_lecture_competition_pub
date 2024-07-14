@@ -99,16 +99,37 @@ def deprocess(x):
 
 # 1. データローダーの作成
 class VQADataset(torch.utils.data.Dataset):
+    import csv
+    with open("class_mapping.csv", "r") as f:
+        csvreader = csv.DictReader(f)
+        rows = list(csvreader)
+
+    new_dict={}
+    for item in rows:
+        name = item["class_id"]
+        new_dict[name] = item.pop("answer")
+
+
     def __init__(self, df_path, image_dir, transform=None, answer=True):
         self.transform = transform  # 画像の前処理
         self.image_dir = image_dir  # 画像ファイルのディレクトリ
         self.df = pandas.read_json(df_path)  # 画像ファイルのパス，question, answerを持つDataFrame
         self.answer = answer
 
+        # csv読み込み、辞書化
+        import csv
+        with open("class_mapping.csv", "r") as f:
+            csvreader = csv.DictReader(f)
+            rows = list(csvreader)
+
+        new_dict={}
+        for item in rows:
+            name = item["class_id"]
+            new_dict[name] = item.pop("answer")
         # question / answerの辞書を作成
         self.question2idx = {}
         self.answer2idx = {}
-        self.idx2question = {}
+        self.idx2question = new_dict
         self.idx2answer = {}
 
         # 質問文に含まれる単語を辞書に追加
@@ -354,7 +375,7 @@ def train(model, dataloader, optimizer, criterion, device):
 
     start = time.time()
     for image, question, answers, mode_answer in dataloader:
-        image, question, answer, mode_answer = \
+        image, question, answers, mode_answer = \
             image.to(device), question.to(device), answers.to(device), mode_answer.to(device)
 
         pred = model(image, question)
@@ -379,7 +400,7 @@ def eval(model, dataloader, optimizer, criterion, device):
 
     start = time.time()
     for image, question, answers, mode_answer in dataloader:
-        image, question, answer, mode_answer = \
+        image, question, answers, mode_answer = \
             image.to(device), question.to(device), answers.to(device), mode_answer.to(device)
 
         pred = model(image, question)
@@ -402,9 +423,9 @@ def main():
 
     # dataloader / model
     transform_train = transforms.Compose([
-        # transforms.Resize((224, 224)),
+        transforms.Resize((224, 224)),
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomCrop((224, 224)), 
+        # transforms.RandomCrop((224, 224)), 
         transforms.RandomRotation(degrees=(-180, 180)),
         transforms.ToTensor(), 
         GCN
