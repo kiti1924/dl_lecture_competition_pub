@@ -403,7 +403,10 @@ def main():
 
     # dataloader / model
     transform_train = transforms.Compose([
-        transforms.Resize((224, 224)),
+        # transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomCrop((224, 224)), 
+        transforms.RandomRotation(degrees=(-180, 180)),
         transforms.ToTensor(), 
         GCN
     ])    
