@@ -454,7 +454,7 @@ def main():
             torch.save(model.state_dict(), "./output"+"/"+"model_best.pth")
             max_train_acc = train_acc
     # 提出用ファイルの作成
-    model.load_state_dict(torch.load("./output"+"/"+"model_best.pt"), map_location=device)
+    model.load_state_dict(torch.load("./output"+"/"+"model_best.pt", map_location=device))
     model.eval()
     submission = []
     for image, question in test_loader:
