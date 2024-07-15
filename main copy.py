@@ -448,7 +448,7 @@ def main():
               f"train loss: {train_loss:.4f}\n"
               f"train acc: {train_acc:.4f}\n"
               f"train simple acc: {train_simple_acc:.4f}")
-        if epoch%10==4:
+        if epoch%10==4 or epoch%10==9:
             torch.save(model.state_dict(), "./output"+"/"+"ep"+str(epoch+1)+"model_last.pth")
         torch.save(model.state_dict(), "./output"+"/"+"model_last.pth")
         if train_acc > max_train_acc:
