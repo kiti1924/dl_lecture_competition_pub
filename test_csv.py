@@ -13,3 +13,5 @@ for item in rows:
     new_dict[name] = item.pop("answer")
 
 print(new_dict)
+
+print(new_dict.get("0"))

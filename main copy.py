@@ -99,17 +99,6 @@ def deprocess(x):
 
 # 1. データローダーの作成
 class VQADataset(torch.utils.data.Dataset):
-    import csv
-    with open("class_mapping.csv", "r") as f:
-        csvreader = csv.DictReader(f)
-        rows = list(csvreader)
-
-    new_dict={}
-    for item in rows:
-        name = item["class_id"]
-        new_dict[name] = item.pop("answer")
-
-
     def __init__(self, df_path, image_dir, transform=None, answer=True):
         self.transform = transform  # 画像の前処理
         self.image_dir = image_dir  # 画像ファイルのディレクトリ
@@ -449,6 +438,8 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
 
+    max_train_acc = 0
+
     # train model
     for epoch in range(num_epoch):
         train_loss, train_acc, train_simple_acc, train_time = train(model, train_loader, optimizer, criterion, device)
@@ -457,8 +448,13 @@ def main():
               f"train loss: {train_loss:.4f}\n"
               f"train acc: {train_acc:.4f}\n"
               f"train simple acc: {train_simple_acc:.4f}")
-
+        torch.save(model.state_dict(), "./output"+"/"+"model_last.pth")
+        if train_acc > max_train_acc:
+            print("New best.", "cyan")
+            torch.save(model.state_dict(), "./output"+"/"+"model_best.pth")
+            max_train_acc = train_acc
     # 提出用ファイルの作成
+    model.load_state_dict(torch.load("./output"+"/"+"model_best.pt"), map_location=device)
     model.eval()
     submission = []
     for image, question in test_loader:
