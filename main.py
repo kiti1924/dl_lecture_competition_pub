@@ -454,7 +454,7 @@ def main():
     model.eval()
     submission = []
     for image, question in test_loader:
-        image, question = torch.tensor(image).to(device), torch.tensor(question).to(device)
+        image, question = image, question
         with torch.autocast('cuda'):
             pred = model(image, question)
         pred = pred.argmax(1).cpu().item()
