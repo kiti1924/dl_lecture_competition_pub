@@ -363,7 +363,7 @@ def train(model, dataloader, optimizer, criterion, device, scaler):
         optimizer.zero_grad()
         # loss.backward()
         # optimizer.step()
-        with torch.autocast('cuda', dtype=torch.float16):
+        with torch.autocast('cuda'):
             pred = model(image, question)
             loss = criterion(pred, mode_answer.squeeze())
         scaler.scale(loss).backward()
@@ -375,7 +375,7 @@ def train(model, dataloader, optimizer, criterion, device, scaler):
     return total_loss / len(dataloader), total_acc / len(dataloader), simple_acc / len(dataloader), time.time() - start
 
 
-def eval(model, dataloader, optimizer, criterion, device):
+def eval(model, dataloader, criterion, device):
     model.eval()
 
     total_loss = 0
@@ -386,16 +386,17 @@ def eval(model, dataloader, optimizer, criterion, device):
     # for image, question, answers, mode_answer in dataloader:
     #     image, question, answers, mode_answer = \
     #         image.to(device), question.to(device), answers.to(device), mode_answer.to(device)
-    for image, question, answers, mode_answer in dataloader:
-        image, answers, mode_answer = \
-            image.to(device), answers.to(device), mode_answer.to(device)
-        with torch.autocast('cuda', dtype=torch.float16):
-            pred = model(image, question)
-            loss = criterion(pred, mode_answer.squeeze())
+    with torch.no_grad():
+        for image, question, answers, mode_answer in dataloader:
+            image, answers, mode_answer = \
+                image.to(device), answers.to(device), mode_answer.to(device)
+            with torch.autocast('cuda'):
+                pred = model(image, question)
+                loss = criterion(pred, mode_answer.squeeze())
 
-        total_loss += loss.item()
-        total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
-        simple_acc += (pred.argmax(1) == mode_answer).mean().item()  # simple accuracy
+            total_loss += loss.item()
+            total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
+            simple_acc += (pred.argmax(1) == mode_answer).mean().item()  # simple accuracy
 
     return total_loss / len(dataloader), total_acc / len(dataloader), simple_acc / len(dataloader), time.time() - start
 
@@ -414,8 +415,8 @@ def main():
     # dataloader / model
     transform_train = transforms.Compose([
         transforms.Resize((224, 224)),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomRotation(degrees=(-180, 180)),
+        # transforms.RandomHorizontalFlip(p=0.5),
+        # transforms.RandomRotation(degrees=(-180, 180)),
         transforms.ToTensor(), 
         GCN
     ])    
@@ -428,46 +429,55 @@ def main():
     test_dataset = VQADataset(df_path="./data/valid.json", image_dir="./data/valid", transform=transform, answer=False)
     test_dataset.update_dict(train_dataset)
 
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=4, pin_memory=True)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 
     model = VQAModel(bert_model_name='bert-base-uncased', n_answer=len(train_dataset.answer2idx)).to(device)
 
     # optimizer / criterion
-    num_epoch = 1
+    num_epoch = 50
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
     scaler = torch.GradScaler()
+
+    now = datetime.datetime.now()
+    current_time = now.strftime("%m-%d-%H-%M")
+    ops = "no_aug"
+    dir_for_output = "./output/" + current_time + ops
+    os.makedirs(dir_for_output, exist_ok=True)
 
     # train model
     for epoch in range(num_epoch):
         # train_loss, train_acc, train_simple_acc, train_time, num_epoch,  = train(model, train_loader, optimizer, criterion, device)
 
-        train_loss, train_acc, train_simple_acc, train_time, num_epoch,  = train(model, train_loader, optimizer, criterion, device, scaler)
+        train_loss, train_acc, train_simple_acc, train_time = train(model, train_loader, optimizer, criterion, device, scaler)
         print(f"【{epoch + 1}/{num_epoch}】\n"
               f"train time: {train_time:.2f} [s]\n"
               f"train loss: {train_loss:.4f}\n"
               f"train acc: {train_acc:.4f}\n"
               f"train simple acc: {train_simple_acc:.4f}")
+        if epoch%1==0:
+            torch.save(model.state_dict(), dir_for_output+"/"+"ep"+str(epoch+1)+"model.pth")
+        torch.save(model.state_dict(), dir_for_output+"/"+"model_last.pth")
+
 
     # 提出用ファイルの作成
-    model.eval()
-    submission = []
-    for image, question in test_loader:
-        image, question = image.to(device), question.to(device)
-        with torch.autocast('cuda', dtype=torch.float16):
-            pred = model(image, question)
-        pred = pred.argmax(1).cpu().item()
-        submission.append(pred)
+    for epoch in range(num_epoch):
+        if epoch%1==0:
+            model.load_state_dict(torch.load(dir_for_output+"/"+"ep"+str(epoch+1)+"model.pth", map_location=device))
+            model.eval()
+            submission = []
+            for image, question in test_loader:
+                image, question = image.to(device), question.to(device)
+                with torch.autocast('cuda'):
+                    pred = model(image, question)
+                pred = pred.argmax(1).cpu().item()
+                submission.append(pred)
 
-    submission = [train_dataset.idx2answer[id] for id in submission]
-    submission = np.array(submission)
-    now = datetime.datetime.now()
-    current_time = now.strftime("%m-%d-%H-%M")
-    dir_for_output = "./output/" + current_time
-    os.makedirs(dir_for_output, exist_ok=True)
-    torch.save(model.state_dict(), dir_for_output+"/"+"model.pth")
-    np.save(dir_for_output +"/"+"submission.npy", submission)
+            submission = [train_dataset.idx2answer[id] for id in submission]
+            submission = np.array(submission)
+
+            np.save(dir_for_output +"/"+"ep"+str(epoch+1)+"submission.npy", submission)
 
 if __name__ == "__main__":
     main()
