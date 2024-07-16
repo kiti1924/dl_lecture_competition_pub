@@ -375,7 +375,7 @@ def train(model, dataloader, optimizer, criterion, device, scaler):
     return total_loss / len(dataloader), total_acc / len(dataloader), simple_acc / len(dataloader), time.time() - start
 
 
-def eval(model, dataloader, optimizer, criterion, device):
+def eval(model, dataloader, criterion, device):
     model.eval()
 
     total_loss = 0
@@ -386,16 +386,17 @@ def eval(model, dataloader, optimizer, criterion, device):
     # for image, question, answers, mode_answer in dataloader:
     #     image, question, answers, mode_answer = \
     #         image.to(device), question.to(device), answers.to(device), mode_answer.to(device)
-    for image, question, answers, mode_answer in dataloader:
-        image, answers, mode_answer = \
-            image.to(device), answers.to(device), mode_answer.to(device)
-        with torch.autocast('cuda'):
-            pred = model(image, question)
-            loss = criterion(pred, mode_answer.squeeze())
+    with torch.no_grad():
+        for image, question, answers, mode_answer in dataloader:
+            image, answers, mode_answer = \
+                image.to(device), answers.to(device), mode_answer.to(device)
+            with torch.autocast('cuda'):
+                pred = model(image, question)
+                loss = criterion(pred, mode_answer.squeeze())
 
-        total_loss += loss.item()
-        total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
-        simple_acc += (pred.argmax(1) == mode_answer).mean().item()  # simple accuracy
+            total_loss += loss.item()
+            total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
+            simple_acc += (pred.argmax(1) == mode_answer).mean().item()  # simple accuracy
 
     return total_loss / len(dataloader), total_acc / len(dataloader), simple_acc / len(dataloader), time.time() - start
 
