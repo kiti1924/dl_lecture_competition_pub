@@ -460,7 +460,7 @@ def main():
 
     # train model
     for epoch in range(num_epoch):
-        train_loss, train_acc, train_simple_acc, train_time, num_epoch,  = train(model, train_loader, optimizer, criterion, device)
+        train_loss, train_acc, train_simple_acc, train_time, num_epoch,  = train(model, train_loader, optimizer, criterion, device, scaler)
         print(f"【{epoch + 1}/{num_epoch}】\n"
               f"train time: {train_time:.2f} [s]\n"
               f"train loss: {train_loss:.4f}\n"
