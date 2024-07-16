@@ -449,12 +449,19 @@ def main():
               f"train loss: {train_loss:.4f}\n"
               f"train acc: {train_acc:.4f}\n"
               f"train simple acc: {train_simple_acc:.4f}")
+        if epoch%10==4 or epoch%10==9:
+            torch.save(model.state_dict(), "./output"+"/"+"ep"+str(epoch+1)+"model_best.pth")
+        torch.save(model.state_dict(), "./output"+"/"+"model_best.pth")
+        if train_acc > max_train_acc:
+            print("New best.")
+            torch.save(model.state_dict(), "./output"+"/"+"model_best.pth")
+            max_train_acc = train_acc
 
     # 提出用ファイルの作成
     model.eval()
     submission = []
     for image, question in test_loader:
-        image, question = image, question
+        image, question = image.to(device), question.to(device)
         with torch.autocast('cuda'):
             pred = model(image, question)
         pred = pred.argmax(1).cpu().item()
