@@ -75,25 +75,6 @@ class gcn():
         return (x - mean)/(std + 10**(-6))  # 0除算を防ぐ
 
 
-# 標準化後の画像を[0, 1]に正規化する
-def deprocess(x):
-    """
-    Argument
-    --------
-    x : np.ndarray
-        入力画像．(H, W, C)
-
-    Return
-    ------
-    _x : np.ndarray
-        [0, 1]で正規化した画像．(H, W, C)
-    """
-    _min = np.min(x)
-    _max = np.max(x)
-    _x = (x - _min)/(_max - _min)
-    return _x
-
-
 # 1. データローダーの作成
 class VQADataset(torch.utils.data.Dataset):
     def __init__(self, df_path, image_dir, transform=None, answer=True):
@@ -382,7 +363,7 @@ def train(model, dataloader, optimizer, criterion, device, scaler):
         optimizer.zero_grad()
         # loss.backward()
         # optimizer.step()
-        with torch.autocast('cuda', dtype=torch.float16):
+        with torch.autocast('cuda'):
             pred = model(image, question)
             loss = criterion(pred, mode_answer.squeeze())
         scaler.scale(loss).backward()
@@ -408,7 +389,7 @@ def eval(model, dataloader, optimizer, criterion, device):
     for image, question, answers, mode_answer in dataloader:
         image, answers, mode_answer = \
             image.to(device), answers.to(device), mode_answer.to(device)
-        with torch.autocast('cuda', dtype=torch.float16):
+        with torch.autocast('cuda'):
             pred = model(image, question)
             loss = criterion(pred, mode_answer.squeeze())
 
@@ -474,7 +455,7 @@ def main():
     submission = []
     for image, question in test_loader:
         image, question = image.to(device), question.to(device)
-        with torch.autocast('cuda', dtype=torch.float16):
+        with torch.autocast('cuda'):
             pred = model(image, question)
         pred = pred.argmax(1).cpu().item()
         submission.append(pred)
