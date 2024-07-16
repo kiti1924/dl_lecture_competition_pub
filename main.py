@@ -439,6 +439,8 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
     scaler = torch.GradScaler()
 
+    max_train_acc = 0
+
     # train model
     for epoch in range(num_epoch):
         # train_loss, train_acc, train_simple_acc, train_time, num_epoch,  = train(model, train_loader, optimizer, criterion, device)
