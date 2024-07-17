@@ -467,7 +467,8 @@ def main():
             model.load_state_dict(torch.load(dir_for_output+"/"+"ep"+str(epoch+1)+"model.pth", map_location=device))
             model.eval()
             submission = []
-            for image, question in test_loader:
+            # for image, question in test_loader:
+            for image, question, answers, mode_answer in test_loader:
                 image, question = image.to(device), question.to(device)
                 with torch.autocast('cuda'):
                     pred = model(image, question)
