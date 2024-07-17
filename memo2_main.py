@@ -309,7 +309,7 @@ def main():
     # DataLoaderの設定
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, pin_memory=True, num_workers=8)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, pin_memory=True, num_workers=8)
-    model = VQAModel(bert_model_name='bert-base-uncased', n_answer=len(train_dataset.answer2idx)).to(device, non_blocking=True)
+    model = VQAModel(n_answer=len(train_dataset.answer2idx), pretrained_bert_path='bert-base-uncased').to(device, non_blocking=True)
 
     # optimizer / criterion
     num_epoch = 5
