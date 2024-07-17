@@ -345,7 +345,6 @@ def main():
                 image = image.to(device, non_blocking=True)
                 with autocast():
                     pred = model(image, question)
-                pred = model(image, question)
                 pred = pred.argmax(1).cpu().item()
                 submission.append(pred)
             submission = [train_dataset.idx2answer[id] for id in submission]
