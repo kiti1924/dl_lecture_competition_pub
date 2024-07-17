@@ -312,7 +312,7 @@ def main():
 
     now = datetime.datetime.now()
     current_time = now.strftime("%m-%d-%H-%M")
-    ops = "main"
+    ops = "memo"
     dir_for_output = "./output/" + current_time + ops
     os.makedirs(dir_for_output, exist_ok=True)
 

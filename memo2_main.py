@@ -280,7 +280,7 @@ def main():
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, pin_memory=True)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, pin_memory=True)
     model = VQAModel(n_answer=len(train_dataset.answer2idx), pretrained_bert_path='bert-base-uncased').to(device, non_blocking=True)
-    
+
     # optimizer / criterion
     num_epoch = 5
     criterion = nn.CrossEntropyLoss()
@@ -288,7 +288,7 @@ def main():
 
     now = datetime.datetime.now()
     current_time = now.strftime("%m-%d-%H-%M")
-    ops = "main"
+    ops = "memo2"
     dir_for_output = "./output/" + current_time + ops
     os.makedirs(dir_for_output, exist_ok=True)
 
