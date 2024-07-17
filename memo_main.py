@@ -71,8 +71,9 @@ class VQADataset(torch.utils.data.Dataset):
         self.df = pd.read_json(df_path)  # 画像ファイルのパス，question, answerを持つDataFrame
         self.answer = answer
         # answerの辞書を作成
-        self.answer2idx = {}
-        self.idx2answer = {}
+        answer_id = pd.read_csv("class_mapping.csv") #class-mappingを活用
+        self.answer2idx = dict(zip(answer_id["answer"], answer_id["class_id"]))
+        self.idx2answer = {v: k for k, v in self.answer2idx.items()}
         if self.answer:
             for answers in self.df["answers"]:
                 for answer in answers:
@@ -231,13 +232,12 @@ class VQAModel(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(768 + 512, 512),  # BERTの出力サイズは768
             nn.ReLU(inplace=True),
-            nn.Dropout(0.5),  # Dropoutを追加
             nn.Linear(512, n_answer)
         )
     def forward(self, image, question):
         image_feature = self.resnet(image)  # 画像の特徴量
         # 質問をトークン化し、BERTに入力
-        inputs = self.tokenizer(question, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        inputs = self.tokenizer(question, return_tensors="pt", padding=True, truncation=True)
         inputs = {k: v.to(image.device) for k, v in inputs.items()}
         outputs = self.bert(**inputs)
         question_feature = outputs.last_hidden_state[:, 0, :]  # [CLS]トークンの出力を使用
@@ -265,6 +265,7 @@ def train(model, dataloader, optimizer, criterion, device, scaler):
         total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
         simple_acc += (pred.argmax(1) == mode_answer).float().mean().item()  # simple accuracy
     return total_loss / len(dataloader), total_acc / len(dataloader), simple_acc / len(dataloader), time.time() - start
+
 def eval(model, dataloader, criterion, device):
     model.eval()
     total_loss = 0
@@ -282,6 +283,7 @@ def eval(model, dataloader, criterion, device):
             total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
             simple_acc += (pred.argmax(1) == mode_answer).float().mean().item()  # simple accuracy
     return total_loss / len(dataloader), total_acc / len(dataloader), simple_acc / len(dataloader), time.time() - start
+
 def main():
     # deviceの設定
     set_seed(42)
@@ -303,9 +305,9 @@ def main():
     model = VQAModel(bert_model_name='bert-base-uncased', n_answer=len(train_dataset.answer2idx)).to(device)
 
     # optimizer / criterion
-    num_epoch = 1
+    num_epoch = 5
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=1e-5)
     scaler = GradScaler()
 
     now = datetime.datetime.now()
@@ -324,9 +326,9 @@ def main():
               f"train simple acc: {train_simple_acc:.4f}")
         if epoch%1==0:
             torch.save(model.state_dict(), dir_for_output+"/"+"ep"+str(epoch+1)+"model.pth")
-        torch.save(model.state_dict(), dir_for_output+"/"+"model_last.pth")# 提出用ファイルの作成
-
-
+        torch.save(model.state_dict(), dir_for_output+"/"+"model_last.pth")
+    
+    # 提出用ファイルの作成
     for epoch in range(num_epoch):
         if epoch%1==0:
             model.eval()

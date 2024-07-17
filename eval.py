@@ -434,11 +434,19 @@ def main():
     model = VQAModel(vocab_size=len(train_dataset.question2idx)+1, n_answer=len(train_dataset.answer2idx)).to(device)
 
     # optimizer / criterion
-    num_epoch = 100
+    num_epoch = 50
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
+    
+    # now = datetime.datetime.now()
+    # current_time = now.strftime("%m-%d-%H-%M")
+    
+    current_time = "07-17-08-32"
+    ops = "main"
 
-    max_train_acc = 0
+    dir_for_output = "./output/" + current_time + ops
+    os.makedirs(dir_for_output, exist_ok=True)
+    # max_train_acc = 0
 
     # # train model
     # for epoch in range(num_epoch):
@@ -453,24 +461,42 @@ def main():
     #         print("New best.", "cyan")
     #         torch.save(model.state_dict(), "./output"+"/"+"model_best.pth")
     #         max_train_acc = train_acc
-    # 提出用ファイルの作成
-    model.load_state_dict(torch.load("./output"+"/"+"model_best.pth", map_location=device))
-    model.eval()
-    submission = []
-    for image, question in test_loader:
-        image, question = image.to(device), question.to(device)
-        pred = model(image, question)
-        pred = pred.argmax(1).cpu().item()
-        submission.append(pred)
+    # # 提出用ファイルの作成
+    # model.load_state_dict(torch.load("./output"+"/"+"model_best.pth", map_location=device))
+    # model.eval()
+    # submission = []
+    # for image, question in test_loader:
+    #     image, question = image.to(device), question.to(device)
+    #     pred = model(image, question)
+    #     pred = pred.argmax(1).cpu().item()
+    #     submission.append(pred)
+    # submission = [train_dataset.idx2answer[id] for id in submission]
+    # submission = np.array(submission)
+    # now = datetime.datetime.now()
+    # current_time = now.strftime("%m-%d-%H-%M")
+    # dir_for_output = "./output/" + current_time
+    # os.makedirs(dir_for_output, exist_ok=True)
+    # torch.save(model.state_dict(), dir_for_output+"/"+"model.pth")
+    # np.save(dir_for_output +"/"+"submission.npy", submission)
 
-    submission = [train_dataset.idx2answer[id] for id in submission]
-    submission = np.array(submission)
-    now = datetime.datetime.now()
-    current_time = now.strftime("%m-%d-%H-%M")
-    dir_for_output = "./output/" + current_time
-    os.makedirs(dir_for_output, exist_ok=True)
-    torch.save(model.state_dict(), dir_for_output+"/"+"model.pth")
-    np.save(dir_for_output +"/"+"submission.npy", submission)
+    # 提出用ファイルの作成
+    for epoch in range(num_epoch):
+        if epoch%1==0:
+            model.load_state_dict(torch.load(dir_for_output+"/"+"ep"+str(epoch+1)+"model.pth", map_location=device))
+            model.eval()
+            submission = []
+            # for image, question in test_loader:
+            for image, question in test_loader:
+                image, question = image.to(device), question.to(device)
+                with torch.autocast('cuda'):
+                    pred = model(image, question)
+                pred = pred.argmax(1).cpu().item()
+                submission.append(pred)
+
+            submission = [train_dataset.idx2answer[id] for id in submission]
+            submission = np.array(submission)
+
+            np.save(dir_for_output +"/"+"ep"+str(epoch+1)+"submission.npy", submission)
 
 if __name__ == "__main__":
     main()
