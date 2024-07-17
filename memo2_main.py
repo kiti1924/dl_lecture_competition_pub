@@ -352,5 +352,6 @@ def main():
             submission = np.array(submission)
 
             np.save(dir_for_output +"/"+"ep"+str(epoch+1)+"submission.npy", submission)
+            print("submission complete!")
 if __name__ == "__main__":
     main()
