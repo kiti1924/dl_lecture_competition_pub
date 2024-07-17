@@ -71,7 +71,7 @@ class VQADataset(torch.utils.data.Dataset):
         self.df = pd.read_json(df_path)  # 画像ファイルのパス，question, answerを持つDataFrame
         self.answer = answer
         # answerの辞書を作成
-        answer_id = pd.read_csv("class_mapping.csv") #class-mappingを活用
+        answer_id = pd.read_csv("class_mapping.csv") #class-mappingをanswerに
         self.answer2idx = dict(zip(answer_id["answer"], answer_id["class_id"]))
         self.idx2answer = {v: k for k, v in self.answer2idx.items()}
         if self.answer:
@@ -223,6 +223,7 @@ def ResNet50():
     return ResNet(BottleneckBlock, [3, 4, 6, 3])
 def ResNet101():
     return ResNet(BottleneckBlock, [3, 4, 23, 3])
+
 class VQAModel(nn.Module):
     def __init__(self, bert_model_name: str, n_answer: int):
         super().__init__()
@@ -245,6 +246,7 @@ class VQAModel(nn.Module):
         x = torch.cat([image_feature, question_feature], dim=1)
         x = self.fc(x)
         return x
+    
 def train(model, dataloader, optimizer, criterion, device, scaler):
     model.train()
     total_loss = 0
@@ -278,7 +280,7 @@ def eval(model, dataloader, criterion, device):
                 image.to(device), answers.to(device), mode_answer.to(device)
             with autocast():
                 pred = model(image, question)
-                loss = criterion(pred, mode_answer.squeeze())
+                loss = criterion(pred, mode_answer)
             total_loss += loss.item()
             total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
             simple_acc += (pred.argmax(1) == mode_answer).float().mean().item()  # simple accuracy
@@ -300,9 +302,9 @@ def main():
     test_dataset.update_dict(train_dataset)
 
     # DataLoaderの設定
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=4, pin_memory=True)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=4, pin_memory=True)
-    model = VQAModel(bert_model_name='bert-base-uncased', n_answer=len(train_dataset.answer2idx)).to(device)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=8, pin_memory=True)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=8, pin_memory=True)
+    model = VQAModel(bert_model_name='bert-base-uncased', n_answer=len(train_dataset.answer2idx)).to(device, non_blocking=True)
 
     # optimizer / criterion
     num_epoch = 5

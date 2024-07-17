@@ -13,6 +13,8 @@ from torchvision import transforms
 import os
 import datetime
 from transformers import BertModel, BertTokenizer
+from torch.cuda.amp import autocast
+from torch.cuda.amp import GradScaler
 
 def set_seed(seed):
     random.seed(seed)
@@ -63,6 +65,17 @@ def process_text(text):
 
     return text
 
+# 画像の前処理を実装
+# GCN
+class gcn():
+    def __init__(self):
+        pass
+
+    def __call__(self, x):
+        mean = torch.mean(x)
+        std = torch.std(x)
+        return (x - mean)/(std + 10**(-6))  # 0除算を防ぐ
+    
 class VQADataset(torch.utils.data.Dataset):
     def __init__(self, df_path, image_dir, transform=None, answer=True):
     #def __init__(self, df_path, image_dir, tokenizer, transform=None, answer=True):
@@ -71,7 +84,7 @@ class VQADataset(torch.utils.data.Dataset):
         self.df = pd.read_json(df_path)  # 画像ファイルのパス，question, answerを持つDataFrame
         self.answer = answer
         #self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        answer_id = pd.read_csv("class_mapping.csv") #class-mappingを活用
+        answer_id = pd.read_csv("class_mapping.csv") #class-mappingをanswerに
         self.answer2idx = dict(zip(answer_id["answer"], answer_id["class_id"]))
         self.idx2answer = {v: k for k, v in self.answer2idx.items()}
         if self.answer:
@@ -226,7 +239,7 @@ class VQAModel(nn.Module):
         x = self.fc(x)
         return x
     
-def train(model, dataloader, optimizer, criterion, device):
+def train(model, dataloader, optimizer, criterion, device, scaler):
     model.train()
     total_loss = 0
     total_acc = 0
@@ -235,11 +248,15 @@ def train(model, dataloader, optimizer, criterion, device):
     for image,  question, answers, mode_answer in dataloader:
         image, answers, mode_answer = \
             image.to(device, non_blocking=True), answers.to(device, non_blocking=True), mode_answer.to(device, non_blocking=True)
-        pred = model(image, question)
-        loss = criterion(pred, mode_answer)
+        with autocast():
+            pred = model(image, question)
+            loss = criterion(pred, mode_answer)
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+
+        scaler.scale(loss).backward() # loss.backward()
+        scaler.step(optimizer)# optimizer.step()
+        scaler.update() # スケールの更新
+
         total_loss += loss.item()
         total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
         simple_acc += (pred.argmax(1) == mode_answer).float().mean().item()  # simple accuracy
@@ -254,8 +271,9 @@ def eval(model, dataloader, criterion, device):
     for image, question, answers, mode_answer in dataloader:
         image, answers, mode_answer = \
             image.to(device, non_blocking=True),  answers.to(device, non_blocking=True), mode_answer.to(device, non_blocking=True)
-        pred = model(image, question)
-        loss = criterion(pred, mode_answer)
+        with autocast():
+            pred = model(image, question)
+            loss = criterion(pred, mode_answer)
         total_loss += loss.item()
         total_acc += VQA_criterion(pred.argmax(1), answers)  # VQA accuracy
         simple_acc += (pred.argmax(1) == mode_answer).mean().item()
@@ -265,26 +283,39 @@ def main():
     # deviceの設定
     set_seed(42)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    # gcnの定義
+    GCN=gcn()
+
     # CuDNNの設定
     torch.backends.cudnn.benchmark = True
+
     # dataloader / model
+    transform_train = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.RandomRotation(degrees=(-180, 180)),
+    transforms.ToTensor(), 
+    GCN
+    ])    
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor()
     ])
-    train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform)
+    # train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform)
+    train_dataset = VQADataset(df_path="./data/train.json", image_dir="./data/train", transform=transform_train)
     test_dataset = VQADataset(df_path="./data/valid.json", image_dir="./data/valid", transform=transform, answer=False)
     test_dataset.update_dict(train_dataset)
 
     # DataLoaderの設定
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, pin_memory=True)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, pin_memory=True)
-    model = VQAModel(n_answer=len(train_dataset.answer2idx), pretrained_bert_path='bert-base-uncased').to(device, non_blocking=True)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True, pin_memory=True, num_workers=8)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, pin_memory=True, num_workers=8)
+    model = VQAModel(bert_model_name='bert-base-uncased', n_answer=len(train_dataset.answer2idx)).to(device, non_blocking=True)
 
     # optimizer / criterion
     num_epoch = 5
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=1e-5)
+    scaler = GradScaler()
 
     now = datetime.datetime.now()
     current_time = now.strftime("%m-%d-%H-%M")
@@ -294,7 +325,7 @@ def main():
 
     # train model
     for epoch in range(num_epoch):
-        train_loss, train_acc, train_simple_acc, train_time = train(model, train_loader, optimizer, criterion, device)
+        train_loss, train_acc, train_simple_acc, train_time = train(model, train_loader, optimizer, criterion, device, scaler)
         print(f"【{epoch + 1}/{num_epoch}】\n"
               f"train time: {train_time:.2f} [s]\n"
               f"train loss: {train_loss:.4f}\n"
@@ -312,6 +343,8 @@ def main():
             for image, question in test_loader:
                 #image, question = image.to(device, non_blocking=True), question.to(device, non_blocking=True)
                 image = image.to(device, non_blocking=True)
+                with autocast():
+                    pred = model(image, question)
                 pred = model(image, question)
                 pred = pred.argmax(1).cpu().item()
                 submission.append(pred)
