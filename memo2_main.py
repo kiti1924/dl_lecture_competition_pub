@@ -312,9 +312,9 @@ def main():
     model = VQAModel(n_answer=len(train_dataset.answer2idx), pretrained_bert_path='bert-base-uncased').to(device, non_blocking=True)
 
     # optimizer / criterion
-    num_epoch = 100
+    num_epoch = 20
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
     scaler = GradScaler()
 
     now = datetime.datetime.now()
