@@ -312,14 +312,14 @@ def main():
     model = VQAModel(n_answer=len(train_dataset.answer2idx), pretrained_bert_path='bert-base-uncased').to(device, non_blocking=True)
 
     # optimizer / criterion
-    num_epoch = 100
+    num_epoch = 20
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001, weight_decay=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
     scaler = GradScaler()
 
     now = datetime.datetime.now()
     # current_time = now.strftime("%m-%d-%H-%M")
-    current_time = now.strftime("07-18-00-37")
+    current_time = now.strftime("07-18-14-57")
     ops = "memo2"
     dir_for_output = "./output/" + current_time + ops
     os.makedirs(dir_for_output, exist_ok=True)
