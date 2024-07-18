@@ -318,27 +318,29 @@ def main():
     scaler = GradScaler()
 
     now = datetime.datetime.now()
-    current_time = now.strftime("%m-%d-%H-%M")
+    # current_time = now.strftime("%m-%d-%H-%M")
+    current_time = now.strftime("07-18-00-37")
     ops = "memo2"
     dir_for_output = "./output/" + current_time + ops
     os.makedirs(dir_for_output, exist_ok=True)
 
-    # train model
-    for epoch in range(num_epoch):
-        train_loss, train_acc, train_simple_acc, train_time = train(model, train_loader, optimizer, criterion, device, scaler)
-        print(f"【{epoch + 1}/{num_epoch}】\n"
-              f"train time: {train_time:.2f} [s]\n"
-              f"train loss: {train_loss:.4f}\n"
-              f"train acc: {train_acc:.4f}\n"
-              f"train simple acc: {train_simple_acc:.4f}")
-        if epoch%1==0:
-            torch.save(model.state_dict(), dir_for_output+"/"+"ep"+str(epoch+1)+"model.pth")
-        torch.save(model.state_dict(), dir_for_output+"/"+"model_last.pth")  
+    # # train model
+    # for epoch in range(num_epoch):
+    #     train_loss, train_acc, train_simple_acc, train_time = train(model, train_loader, optimizer, criterion, device, scaler)
+    #     print(f"【{epoch + 1}/{num_epoch}】\n"
+    #           f"train time: {train_time:.2f} [s]\n"
+    #           f"train loss: {train_loss:.4f}\n"
+    #           f"train acc: {train_acc:.4f}\n"
+    #           f"train simple acc: {train_simple_acc:.4f}")
+    #     if epoch%1==0:
+    #         torch.save(model.state_dict(), dir_for_output+"/"+"ep"+str(epoch+1)+"model.pth")
+    #     torch.save(model.state_dict(), dir_for_output+"/"+"model_last.pth")  
 
     # 提出用ファイルの作成
     for epoch in range(num_epoch):
         if epoch%1==0:
             model.load_state_dict(torch.load(dir_for_output+"/"+"ep"+str(epoch+1)+"model.pth", map_location=device))
+            print("torch_load")
             model.eval()
             submission = []
             for image, question in test_loader:
